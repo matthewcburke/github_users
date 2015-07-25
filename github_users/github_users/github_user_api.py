@@ -1,3 +1,9 @@
+"""
+TODO:
+- Handle paginated responses
+- Handle request errors
+- Handle rate limiting
+"""
 import requests
 
 from django.conf import settings
@@ -6,8 +12,8 @@ from django.core.cache import cache
 
 class GitHubUserApi(object):
     """
-    Provide a simple way to query the GitHub user endpoint and get follower and following
-    information.
+    Provide a simple way to query the GitHub user endpoint and get
+    follower and following information.
     """
     HOST = 'https://api.github.com/'
 
@@ -18,7 +24,8 @@ class GitHubUserApi(object):
         """
         Create and return a headers dict.
 
-        Populate it with and auth token if we found one in the settings.
+        Populate it with and auth token if we found one in the
+        settings.
         Populate headers with the etag if it is available.
         """
         headers = {}
@@ -38,7 +45,27 @@ class GitHubUserApi(object):
         header_key = 'etag'
         if header_key in response.headers:
             cache_key = 'e_tag-%s' % endpoint
-            cache.set(cache_key, response.headers[header_key].lstrip('W/'))
+            cache.set(cache_key,
+                      response.headers[header_key].lstrip('W/'))
+
+    @staticmethod
+    def _repackage_response(response):
+        """
+        Repackage the response into a dictionary, so that clients
+        don't need to worry about error handling and interacting with
+        headers.
+        """
+        try:
+            json_data = response.json()
+        except ValueError:
+            json_data = []
+
+        resp_dict = {
+            'status': response.status_code,
+            'etag': response.headers.get('etag', '').lstrip('W/'),
+            'json': json_data
+        }
+        return resp_dict
 
     def get_user(self, username):
         user_endpoint = 'users/%s' % username
@@ -46,7 +73,7 @@ class GitHubUserApi(object):
         response = requests.get(''.join([self.HOST, user_endpoint]),
                                 headers=headers)
         self._cache_etag(response, user_endpoint)
-        return response
+        return self._repackage_response(response)
 
     def get_user_followers(self, username, follower_endpoint=None):
         if follower_endpoint is None:
@@ -55,7 +82,7 @@ class GitHubUserApi(object):
         response = requests.get(''.join([self.HOST, follower_endpoint]),
                                 headers=headers)
         self._cache_etag(response, follower_endpoint)
-        return response
+        return self._repackage_response(response)
 
     def get_user_following(self, username):
         following_endpoint = 'users/%s/following' % username
@@ -63,4 +90,4 @@ class GitHubUserApi(object):
         response = requests.get(''.join([self.HOST, following_endpoint]),
                                 headers=headers)
         self._cache_etag(response, following_endpoint)
-        return response
+        return self._repackage_response(response)
