@@ -15,6 +15,40 @@ class GitHubObject(models.Model):
         abstract = True
 
 
+class FollowManager(models.Manager):
+    def distance(self, root_user, distance=1, follow_qs=None, depth=1, *args, **kwargs):
+        """
+        Return a queryset of GitHubUsers who are a given distance from the root_user along
+        the followers edges.
+
+        We are accomplishing this by recursively building up sub-queries.
+
+        Note that this method will follow cycles in the graph.
+
+        :param distance: The distance between users on the graph
+        :param follow_qs: The queryset to modify. Should only be passed by a recursive call.
+        :param depth: Used internally to track depth of recursion.
+                      Should only be passed by a recursive call.
+        :return: a queryset
+        """
+        if follow_qs is None:
+            follow_qs = self.get_queryset()
+
+        if depth > distance:
+            # end recursion
+            return follow_qs.filter(*args, **kwargs)
+        elif depth == 1:
+            follower_or_following = (models.Q(following=root_user) |
+                                     models.Q(followers=root_user))
+        else:
+            follower_or_following = (models.Q(followers__in=follow_qs) |
+                                     models.Q(following__in=follow_qs))
+
+        qs = self.get_queryset().filter(follower_or_following)
+        return self.distance(follow_qs=qs, depth=depth + 1, distance=distance,
+                             root_user=root_user).distinct()
+
+
 class GitHubUser(GitHubObject):
     """
     Model a GitHub user with particular interest in followers and users being followed.
@@ -25,6 +59,9 @@ class GitHubUser(GitHubObject):
     num_followers = models.IntegerField(null=True, blank=True)
     num_following = models.IntegerField(null=True, blank=True)
 
+    objects = models.Manager()
+    follow_relations = FollowManager()
+
     def __init__(self, *args, **kwargs):
         super(GitHubUser, self).__init__(*args, **kwargs)
         self.api = GitHubUserApi()
@@ -32,7 +69,7 @@ class GitHubUser(GitHubObject):
     def __unicode__(self):
         return self.login
 
-    def populate_from_github(self):
+    def populate_from_github(self, save=True):
         api_resp = self.api.get_user(self.login)
         if api_resp['status'] == 200:
             self.github_id = api_resp['json']['id']
@@ -46,6 +83,9 @@ class GitHubUser(GitHubObject):
             pass
         else:
             pass
+
+        if save:
+            self.save()
         return self
 
     def populate_followers(self):
@@ -95,7 +135,7 @@ class GitHubUser(GitHubObject):
                 continue
             follower = follower.populate_from_github()
             follower.save()
-            follower.fill_followering_graph(depth=depth - 1, parents=calling_parents)
+            follower.fill_follow_graph(depth=depth - 1, parents=calling_parents)
 
         for followee in self.following.all():
             # start with the original list of parents each time.
@@ -104,4 +144,23 @@ class GitHubUser(GitHubObject):
                 continue
             followee = followee.populate_from_github()
             followee.save()
-            followee.fill_followering_graph(depth=depth - 1, parents=calling_parents)
+            followee.fill_follow_graph(depth=depth - 1, parents=calling_parents)
+
+    def users_at_distance(self, distance):
+        """
+        Return a queryset of all users at a given distance from self. Note that
+        this method follows cycles in the graph.
+        """
+        return GitHubUser.follow_relations.distance(root_user=self, distance=distance)
+
+    def users_within_distance(self, distance):
+        """
+        Return a queryset of all the users within the given distance to self.
+        """
+        assert distance > 0
+        # Build up a queryset that includes all of the related  users within a given distance
+        qs = self.users_at_distance(1)
+        for i in range(2, distance + 1):
+            qs = qs | self.users_at_distance(i)
+
+        return qs.exclude(pk=self.pk)
