@@ -78,11 +78,11 @@ class GitHubUser(GitHubObject):
             self.num_following = api_resp['json']['following']
             self.last_retrieved = datetime.datetime.now(tz=pytz.UTC)
         elif api_resp['status'] == 304:
-            pass
+            save = False
         elif api_resp['status'] == 404:
-            pass
+            save = False
         else:
-            pass
+            save = False
 
         if save:
             self.save()
