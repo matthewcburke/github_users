@@ -1,10 +1,11 @@
 """
 TODO:
 - Handle paginated responses
-- Handle rate limiting
 """
 import logging
 import requests
+import signal
+import time
 
 from django.conf import settings
 from django.core.cache import cache
@@ -19,9 +20,23 @@ class GitHubUserApi(object):
     follower and following information.
     """
     HOST = 'https://api.github.com'
+    RATE_LIMIT = '/rate_limit'
 
     def __init__(self):
-        self.token = settings.GITHUB_ACCESS_TOKEN 
+        self.token = settings.GITHUB_ACCESS_TOKEN
+
+        self.rate_limit = cache.get('github_rate_limit')
+        self.rate_remaining = cache.get('github_rate_remaining')
+        self.rate_reset = cache.get('github_rate_reset')
+
+        if self.rate_limit is None:
+            headers = self._populate_headers(self.RATE_LIMIT)
+            response = self._get(self.RATE_LIMIT, headers)
+            rate_data = self._repackage_response(response)['json']['resources']['core']
+
+            self.rate_limit = rate_data['limit']
+            self.rate_remaining = rate_data['remaining']
+            self.rate_reset = rate_data['reset']
 
     def _populate_headers(self, endpoint):
         """
@@ -52,10 +67,28 @@ class GitHubUserApi(object):
                       response.headers[header_key].lstrip('W/'))
 
     def _get(self, endpoint, headers):
+        if self.rate_limit is not None and self.rate_remaining == 0:
+            sec_to_reset = self.rate_reset - int(time.time())
+            log.warning("Rate limit exceeded. Waiting %d seconds for reset."
+                        "Use <Ctrl> C to cancel." % sec_to_reset)
+
+            prev_handler = signal.signal(signal.SIGINT, signal.SIG_DFL)
+            time.sleep(sec_to_reset + 1)
+            signal.signal(signal.SIGINT, prev_handler)
+
         try:
-            return requests.get(''.join([self.HOST, endpoint]), headers=headers)
+            response = requests.get(''.join([self.HOST, endpoint]), headers=headers)
         except requests.exceptions.RequestException as e:
             log.exception("Exception while getting '%s': %s" % (endpoint, e))
+        else:
+            self.rate_limit = int(response.headers['X-RateLimit-Limit'])
+            self.rate_remaining = int(response.headers['X-RateLimit-Remaining'])
+            self.rate_reset = int(response.headers['X-RateLimit-Reset'])
+            cache.set('github_rate_limit', self.rate_limit)
+            cache.set('github_rate_remaining', self.rate_remaining)
+            cache.set('github_rate_reset', self.rate_reset)
+
+            return response
 
     @staticmethod
     def _repackage_response(response):

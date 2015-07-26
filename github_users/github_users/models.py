@@ -1,6 +1,7 @@
 import datetime
 import copy
 import pytz
+import requests
 
 from django.db import models
 
@@ -71,16 +72,12 @@ class GitHubUser(GitHubObject):
 
     def populate_from_github(self, save=True):
         api_resp = self.api.get_user(self.login)
-        if api_resp['status'] == 200:
+        if api_resp['status'] == requests.codes.ok:
             self.github_id = api_resp['json']['id']
             self.e_tag = api_resp['etag']
             self.num_followers = api_resp['json']['followers']
             self.num_following = api_resp['json']['following']
             self.last_retrieved = datetime.datetime.now(tz=pytz.UTC)
-        elif api_resp['status'] == 304:
-            save = False
-        elif api_resp['status'] == 404:
-            save = False
         else:
             save = False
 
@@ -89,7 +86,12 @@ class GitHubUser(GitHubObject):
         return self
 
     def populate_followers(self):
-        follower_data = self.api.get_user_followers(self.login)['json']
+        api_resp = self.api.get_user_followers(self.login)
+        if api_resp['status'] == requests.codes.ok:
+            follower_data = api_resp['json']
+        else:
+            follower_data = []
+
         for user in follower_data:
             follower, created = GitHubUser.objects.get_or_create(
                 github_id=user['id'],
@@ -100,7 +102,12 @@ class GitHubUser(GitHubObject):
                 self.followers.add(follower)
 
     def populate_following(self):
-        following_data = self.api.get_user_following(self.login)['json']
+        api_resp = self.api.get_user_following(self.login)
+        if api_resp['status'] == requests.codes.ok:
+            following_data = api_resp['json']
+        else:
+            following_data = []
+
         for user in following_data:
             following, created = GitHubUser.objects.get_or_create(
                 github_id=user['id'],
@@ -134,7 +141,6 @@ class GitHubUser(GitHubObject):
             if follower in calling_parents:
                 continue
             follower = follower.populate_from_github()
-            follower.save()
             follower.fill_follow_graph(depth=depth - 1, parents=calling_parents)
 
         for followee in self.following.all():
@@ -143,7 +149,6 @@ class GitHubUser(GitHubObject):
             if followee in calling_parents:
                 continue
             followee = followee.populate_from_github()
-            followee.save()
             followee.fill_follow_graph(depth=depth - 1, parents=calling_parents)
 
     def users_at_distance(self, distance):
