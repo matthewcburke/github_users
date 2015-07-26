@@ -11,6 +11,7 @@ from .github_user_api import GitHubUserApi
 class GitHubObject(models.Model):
     e_tag = models.CharField(max_length=32, null=True, blank=True)
     last_retrieved = models.DateTimeField()
+    last_checked = models.DateTimeField()
 
     class Meta:
         abstract = True
@@ -58,7 +59,11 @@ class GitHubUser(GitHubObject):
     login = models.CharField(max_length=39, unique=True)
     followers = models.ManyToManyField('self', related_name='following', symmetrical=False)
     num_followers = models.IntegerField(null=True, blank=True)
+    followers_etag = models.CharField(max_length=32, blank=True, null=True)
+    followers_url = models.URLField(blank=True, null=True)
     num_following = models.IntegerField(null=True, blank=True)
+    following_etag = models.CharField(max_length=32, blank=True, null=True)
+    following_url = models.URLField(blank=True, null=True)
 
     objects = models.Manager()
     follow_relations = FollowManager()
@@ -71,13 +76,18 @@ class GitHubUser(GitHubObject):
         return self.login
 
     def populate_from_github(self, save=True):
-        api_resp = self.api.get_user(self.login)
+        api_resp = self.api.get_user(self.login, self.e_tag)
+        now = datetime.datetime.now(tz=pytz.UTC)
         if api_resp['status'] == requests.codes.ok:
             self.github_id = api_resp['json']['id']
             self.e_tag = api_resp['etag']
             self.num_followers = api_resp['json']['followers']
+            self.followers_url = api_resp['json']['followers_url']
             self.num_following = api_resp['json']['following']
-            self.last_retrieved = datetime.datetime.now(tz=pytz.UTC)
+            self.following_ulr = api_resp['json']['following_url'].rstrip('{/other_user}')
+            self.last_retrieved = self.last_checked = now
+        elif api_resp['status'] == requests.codes.not_modified:
+            self.last_checked = now
         else:
             save = False
 
@@ -85,37 +95,43 @@ class GitHubUser(GitHubObject):
             self.save()
         return self
 
-    def populate_followers(self):
-        api_resp = self.api.get_user_followers(self.login)
+    def populate_followers(self, force=False):
+        if self.num_followers == 0 and not force:
+            return
+
+        api_resp = self.api.get_user_followers(self.login, self.followers_etag)
         if api_resp['status'] == requests.codes.ok:
             follower_data = api_resp['json']
-        else:
-            follower_data = []
+            self.followers_etag = api_resp['etag']
+            self.save()
+            for user in follower_data:
+                now = datetime.datetime.now(tz=pytz.UTC)
+                follower, created = GitHubUser.objects.get_or_create(
+                    github_id=user['id'],
+                    login=user['login'],
+                    defaults={'last_retrieved': now, 'last_checked': now}
+                )
+                if follower not in self.followers.all():
+                    self.followers.add(follower)
 
-        for user in follower_data:
-            follower, created = GitHubUser.objects.get_or_create(
-                github_id=user['id'],
-                login=user['login'],
-                defaults={'last_retrieved': datetime.datetime.now(tz=pytz.UTC)}
-            )
-            if follower not in self.followers.all():
-                self.followers.add(follower)
+    def populate_following(self, force=False):
+        if self.num_following == 0 and not force:
+            return
 
-    def populate_following(self):
-        api_resp = self.api.get_user_following(self.login)
+        api_resp = self.api.get_user_following(self.login, self.following_etag)
         if api_resp['status'] == requests.codes.ok:
             following_data = api_resp['json']
-        else:
-            following_data = []
-
-        for user in following_data:
-            following, created = GitHubUser.objects.get_or_create(
-                github_id=user['id'],
-                login=user['login'],
-                defaults={'last_retrieved': datetime.datetime.now(tz=pytz.UTC)}
-            )
-            if following not in self.following.all():
-                self.following.add(following)
+            self.following_etag = api_resp['etag']
+            self.save()
+            for user in following_data:
+                now = datetime.datetime.now(tz=pytz.UTC)
+                following, created = GitHubUser.objects.get_or_create(
+                    github_id=user['id'],
+                    login=user['login'],
+                    defaults={'last_retrieved': now, 'last_checked': now}
+                )
+                if following not in self.following.all():
+                    self.following.add(following)
 
     def fill_follow_graph(self, depth=3, parents=None):
         """

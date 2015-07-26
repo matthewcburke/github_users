@@ -38,7 +38,7 @@ class GitHubUserApi(object):
             self.rate_remaining = rate_data['remaining']
             self.rate_reset = rate_data['reset']
 
-    def _populate_headers(self, endpoint):
+    def _populate_headers(self, endpoint, etag=None):
         """
         Create and return a headers dict.
 
@@ -50,9 +50,11 @@ class GitHubUserApi(object):
         if self.token is not None:
             headers['Authorization'] = 'token %s' % self.token
 
-        e_tag = cache.get('e_tag-%s' % endpoint)
-        if e_tag is not None:
-            headers['If-None-Match'] = '%s' % e_tag
+        if etag is None:
+            etag = cache.get('e_tag-%s' % endpoint)
+        if etag is not None:
+            headers['If-None-Match'] = '%s' % etag
+
         return headers
 
     @staticmethod
@@ -67,6 +69,7 @@ class GitHubUserApi(object):
                       response.headers[header_key].lstrip('W/'))
 
     def _get(self, endpoint, headers):
+        log.debug("== Get '%s'" % endpoint)
         if self.rate_limit is not None and self.rate_remaining == 0:
             sec_to_reset = self.rate_reset - int(time.time())
             log.warning("Rate limit exceeded. Waiting %d seconds for reset."
@@ -87,6 +90,7 @@ class GitHubUserApi(object):
             cache.set('github_rate_limit', self.rate_limit)
             cache.set('github_rate_remaining', self.rate_remaining)
             cache.set('github_rate_reset', self.rate_reset)
+            log.debug("---- Remaining: %d" % self.rate_remaining)
 
             return response
 
@@ -113,25 +117,25 @@ class GitHubUserApi(object):
 
         return resp_dict
 
-    def get_user(self, username):
+    def get_user(self, username, etag=None):
         user_endpoint = '/users/%s' % username
-        headers = self._populate_headers(user_endpoint)
+        headers = self._populate_headers(user_endpoint, etag)
         response = self._get(user_endpoint, headers)
 
         self._cache_etag(response, user_endpoint)
         return self._repackage_response(response)
 
-    def get_user_followers(self, username, follower_endpoint=None):
+    def get_user_followers(self, username, follower_etag, follower_endpoint=None):
         if follower_endpoint is None:
             follower_endpoint = '/users/%s/followers' % username
-        headers = self._populate_headers(follower_endpoint)
+        headers = self._populate_headers(follower_endpoint, follower_etag)
         response = self._get(follower_endpoint, headers)
         self._cache_etag(response, follower_endpoint)
         return self._repackage_response(response)
 
-    def get_user_following(self, username):
+    def get_user_following(self, username, following_etag):
         following_endpoint = '/users/%s/following' % username
-        headers = self._populate_headers(following_endpoint)
+        headers = self._populate_headers(following_endpoint, following_etag)
         response = self._get(following_endpoint, headers)
         self._cache_etag(response, following_endpoint)
         return self._repackage_response(response)
