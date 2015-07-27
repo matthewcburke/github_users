@@ -1,6 +1,7 @@
 import logging
 import requests
 import signal
+import sys
 import time
 
 from django.conf import settings
@@ -68,8 +69,10 @@ class GitHubUserApi(object):
         log.debug("== Get '%s'" % endpoint)
         if self.rate_limit is not None and self.rate_remaining == 0:
             sec_to_reset = self.rate_reset - int(time.time())
-            log.warning("Rate limit exceeded. Waiting %d seconds for reset."
-                        "Use <Ctrl> C to cancel." % sec_to_reset)
+            msg = "Rate limit exceeded. Waiting %d seconds for reset.\n" % sec_to_reset
+            log.warning(msg)
+            sys.stdout.writelines([msg, "Use <Ctrl> C to cancel.\n"], )
+            sys.stdout.flush()
 
             prev_handler = signal.signal(signal.SIGINT, signal.SIG_DFL)
             time.sleep(sec_to_reset + 1)
