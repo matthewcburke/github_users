@@ -1,7 +1,3 @@
-"""
-TODO:
-- Handle paginated responses
-"""
 import logging
 import requests
 import signal
@@ -52,7 +48,7 @@ class GitHubUserApi(object):
 
         if etag is None:
             etag = cache.get('e_tag-%s' % endpoint)
-        if etag is not None:
+        if etag is not None and etag is not False:
             headers['If-None-Match'] = '%s' % etag
 
         return headers
@@ -68,7 +64,7 @@ class GitHubUserApi(object):
             cache.set(cache_key,
                       response.headers[header_key].lstrip('W/'))
 
-    def _get(self, endpoint, headers):
+    def _get(self, endpoint, headers, absolute_url=False):
         log.debug("== Get '%s'" % endpoint)
         if self.rate_limit is not None and self.rate_remaining == 0:
             sec_to_reset = self.rate_reset - int(time.time())
@@ -79,8 +75,13 @@ class GitHubUserApi(object):
             time.sleep(sec_to_reset + 1)
             signal.signal(signal.SIGINT, prev_handler)
 
+        if absolute_url:
+            url = endpoint
+        else:
+            url = ''.join([self.HOST, endpoint])
+
         try:
-            response = requests.get(''.join([self.HOST, endpoint]), headers=headers)
+            response = requests.get(url, headers=headers, timeout=19)
         except requests.exceptions.RequestException as e:
             log.exception("Exception while getting '%s': %s" % (endpoint, e))
         else:
@@ -112,6 +113,8 @@ class GitHubUserApi(object):
                 'etag': response.headers.get('etag', '').lstrip('W/'),
                 'json': json_data
             }
+            if 'next' in response.links:
+                resp_dict['next'] = response.links['next']['url']
         else:
             resp_dict = {'status': None, 'etag': None, 'json': []}
 
@@ -125,17 +128,23 @@ class GitHubUserApi(object):
         self._cache_etag(response, user_endpoint)
         return self._repackage_response(response)
 
-    def get_user_followers(self, username, follower_etag, follower_endpoint=None):
-        if follower_endpoint is None:
-            follower_endpoint = '/users/%s/followers' % username
-        headers = self._populate_headers(follower_endpoint, follower_etag)
-        response = self._get(follower_endpoint, headers)
-        self._cache_etag(response, follower_endpoint)
+    def get_user_followers(self, username, follower_etag=None, follower_url=None):
+        absolute_url = True
+        if follower_url is None:
+            follower_url = '/users/%s/followers?per_page=100' % username
+            absolute_url = False
+        headers = self._populate_headers(follower_url, follower_etag)
+        response = self._get(follower_url, headers, absolute_url)
+        self._cache_etag(response, follower_url)
         return self._repackage_response(response)
 
-    def get_user_following(self, username, following_etag):
-        following_endpoint = '/users/%s/following' % username
-        headers = self._populate_headers(following_endpoint, following_etag)
-        response = self._get(following_endpoint, headers)
-        self._cache_etag(response, following_endpoint)
+    def get_user_following(self, username, following_etag=None, following_url=None):
+        absolute_url = True
+        if following_url is None:
+            following_url = '/users/%s/following?per_page=100' % username
+            absolute_url = False
+
+        headers = self._populate_headers(following_url, following_etag)
+        response = self._get(following_url, headers, absolute_url)
+        self._cache_etag(response, following_url)
         return self._repackage_response(response)
