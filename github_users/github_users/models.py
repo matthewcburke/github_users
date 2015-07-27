@@ -71,15 +71,16 @@ class GitHubUser(GitHubObject):
     objects = models.Manager()
     follow_relations = FollowManager()
 
-    def __init__(self, *args, **kwargs):
-        super(GitHubUser, self).__init__(*args, **kwargs)
-        self.api = GitHubUserApi()
-
     def __unicode__(self):
         return self.login
 
+    def _init_gh_api(self):
+        if not hasattr(self, 'api'):
+            self.api = GitHubUserApi()
+
     def populate_from_github(self, save=True, force=False):
         etag = False if force else self.e_tag
+        self._init_gh_api()
         api_resp = self.api.get_user(self.login, etag)
         now = datetime.datetime.now(tz=pytz.UTC)
         if api_resp['status'] == requests.codes.ok:
@@ -123,6 +124,7 @@ class GitHubUser(GitHubObject):
             return
 
         etag = False if force else self.followers_etag
+        self._init_gh_api()
         api_resp = self.api.get_user_followers(self.login, etag)
         if api_resp['status'] == requests.codes.ok:
             follower_data = api_resp['json']
@@ -153,6 +155,7 @@ class GitHubUser(GitHubObject):
             return
 
         etag = False if force else self.following_etag
+        self._init_gh_api()
         api_resp = self.api.get_user_following(self.login, etag)
         if api_resp['status'] == requests.codes.ok:
             following_data = api_resp['json']
