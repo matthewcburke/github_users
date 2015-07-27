@@ -14,9 +14,14 @@ class GitHubUserResource(ModelResource):
     class Meta:
         queryset = GitHubUser.objects.all()
         resource_name = 'user'
-        fields = ['id', 'github_id', 'login', 'num_following', 'num_followers']
+        fields = ['id', 'github_id', 'login', 'num_following',
+                  'num_followers', 'location', 'company']
         filtering = {
             'login': ALL,
+            'num_followers': ALL,
+            'num_following': ALL,
+            'location': ALL,
+            'company': ALL,
             'followers': ALL_WITH_RELATIONS,
             'following': ALL_WITH_RELATIONS,
             'distance': []

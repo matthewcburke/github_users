@@ -64,6 +64,8 @@ class GitHubUser(GitHubObject):
     num_following = models.IntegerField(null=True, blank=True)
     following_etag = models.CharField(max_length=32, blank=True, null=True)
     following_url = models.URLField(blank=True, null=True)
+    company = models.CharField(max_length=200, blank=True, null=True)
+    location = models.CharField(max_length=200, blank=True, null=True)
 
     objects = models.Manager()
     follow_relations = FollowManager()
@@ -81,11 +83,15 @@ class GitHubUser(GitHubObject):
         now = datetime.datetime.now(tz=pytz.UTC)
         if api_resp['status'] == requests.codes.ok:
             self.github_id = api_resp['json']['id']
+            self.login = api_resp['json']['login']
             self.e_tag = api_resp['etag']
-            self.num_followers = api_resp['json']['followers']
-            self.followers_url = api_resp['json']['followers_url']
-            self.num_following = api_resp['json']['following']
-            self.following_ulr = api_resp['json']['following_url'].rstrip('{/other_user}')
+            self.num_followers = api_resp['json'].get('followers')
+            self.followers_url = api_resp['json'].get('followers_url')
+            self.num_following = api_resp['json'].get('following')
+            self.following_ulr = api_resp['json'].get('following_url',
+                                                      '').rstrip('{/other_user}')
+            self.location = api_resp['json'].get('location')
+            self.company = api_resp['json'].get('company')
             self.last_retrieved = self.last_checked = now
         elif api_resp['status'] == requests.codes.not_modified:
             self.last_checked = now
@@ -103,7 +109,7 @@ class GitHubUser(GitHubObject):
             now = datetime.datetime.now(tz=pytz.UTC)
             follower, created = GitHubUser.objects.get_or_create(
                 github_id=user['id'],
-                defaults={'last_retrieved': now, 'last_checked': now}
+                defaults={'login': user['login'], 'last_retrieved': now, 'last_checked': now}
             )
             if follower not in followers:
                 to_add.append(follower)
@@ -133,7 +139,7 @@ class GitHubUser(GitHubObject):
             now = datetime.datetime.now(tz=pytz.UTC)
             gh_user, created = GitHubUser.objects.get_or_create(
                 github_id=user['id'],
-                defaults={'last_retrieved': now, 'last_checked': now}
+                defaults={'login': user['login'], 'last_retrieved': now, 'last_checked': now}
             )
             if gh_user not in following:
                 to_add.append(gh_user)
