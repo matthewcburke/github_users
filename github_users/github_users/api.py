@@ -17,6 +17,8 @@ class GitHubUserResource(ModelResource):
         fields = ['id', 'github_id', 'login', 'num_following',
                   'num_followers', 'location', 'company']
         filtering = {
+            'id': ALL,
+            'github_id': ALL,
             'login': ALL,
             'num_followers': ALL,
             'num_following': ALL,
@@ -26,6 +28,8 @@ class GitHubUserResource(ModelResource):
             'following': ALL_WITH_RELATIONS,
             'distance': []
         }
+        ordering = ['id', 'num_followers', 'num_following', 'login', 'github_id', 'location',
+                    'company']
 
     def prepend_urls(self):
         return [
