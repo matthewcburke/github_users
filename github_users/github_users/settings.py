@@ -136,3 +136,6 @@ LOGGING = {
 }
 
 TASTYPIE_DEFAULT_FORMATS = ['json']
+
+# Controls if we fully populate users at the edge of a related user graph.
+POPULATE_ALL = True

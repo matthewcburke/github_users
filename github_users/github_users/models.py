@@ -3,6 +3,7 @@ import copy
 import pytz
 import requests
 
+from django.conf import settings
 from django.db import models
 
 from .github_user_api import GitHubUserApi
@@ -177,7 +178,7 @@ class GitHubUser(GitHubObject):
         self.populate_followers(force=force)
         self.populate_following(force=force)
 
-        if depth > 1:
+        if depth > 1 or settings.POPULATE_ALL:
             for follower in self.followers.all():
                 # start with the original list of parents each time.
                 calling_parents = copy.copy(parents)
@@ -185,7 +186,9 @@ class GitHubUser(GitHubObject):
                     continue
                 # Only fully populate the follower if there will be multiple levels
                 follower = follower.populate_from_github(force=force)
-                follower.fill_follow_graph(depth=depth - 1, parents=calling_parents, force=force)
+                if depth > 1:
+                    follower.fill_follow_graph(depth=depth - 1, parents=calling_parents,
+                                               force=force)
 
             for followee in self.following.all():
                 # start with the original list of parents each time.
@@ -193,7 +196,9 @@ class GitHubUser(GitHubObject):
                 if followee in calling_parents:
                     continue
                 followee = followee.populate_from_github(force=force)
-                followee.fill_follow_graph(depth=depth - 1, parents=calling_parents, force=force)
+                if depth > 1:
+                    followee.fill_follow_graph(depth=depth - 1, parents=calling_parents,
+                                               force=force)
 
     def users_at_distance(self, distance):
         """
