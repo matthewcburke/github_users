@@ -103,7 +103,6 @@ class GitHubUser(GitHubObject):
             now = datetime.datetime.now(tz=pytz.UTC)
             follower, created = GitHubUser.objects.get_or_create(
                 github_id=user['id'],
-                login=user['login'],
                 defaults={'last_retrieved': now, 'last_checked': now}
             )
             if follower not in followers:
@@ -134,7 +133,6 @@ class GitHubUser(GitHubObject):
             now = datetime.datetime.now(tz=pytz.UTC)
             gh_user, created = GitHubUser.objects.get_or_create(
                 github_id=user['id'],
-                login=user['login'],
                 defaults={'last_retrieved': now, 'last_checked': now}
             )
             if gh_user not in following:
