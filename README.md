@@ -38,10 +38,25 @@ cd github_users
 pip install -r requirements.txt
 cd github_users
 python manage.py migrate
-# crawl GitHub to get some user data
-python manage.py fill_user_graph matthewcburke
+# crawl GitHub to get some user data. This could take a while depending on the name you enter!
+python manage.py fill_user_graph matthewcburke 3
 python manage.py runserver
 ```
+
+### Crawling GitHub
+
+Depending on the GitHub user that you pick, this could take a while. `pauladam` pulls down 160,000
+users at a distance of 3. `matthewcburke` will pull down 7 users. Pulling down the
+details of 160,000 users could take many hours. If you set `POPULATE_ALL = False` in the
+settings file, this project will not populate all of the details (e.g. location, company) of the
+third tier connections. With this change, you should be able to download 160,000 users in ~ 2 hours.
+
+#### Authentication and Rate Limiting
+
+As an unauthenticated user you can make 60 requests per hour to GitHub. As an authenticated user you
+can make 5,000 requests per hour. To authenticate, follow [these instructions]
+(https://help.github.com/articles/creating-an-access-token-for-command-line-use/), and then
+`export GITHUB_ACCESS_TOKEN=<your_access_token>` before running the `fill_user_graph` command.
 
 ## Browse The API
 
@@ -62,3 +77,9 @@ python manage.py runserver
 - `localhost:8000/api/user/?order_by=-num_followers`: use the order_by parameter for ordering the
   results. One may order by `id`, `github_id`, `login`, `num_followers`, `num_following`,
   `location` and `company`.
+
+### Performance
+
+I don't have much context for what kind of performance should be expected, but my present solution
+for finding users at a given distance can take a few minutes to return an answer with 160,000
+records in the database.
