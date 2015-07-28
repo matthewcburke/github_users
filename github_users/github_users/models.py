@@ -34,20 +34,29 @@ class FollowManager(models.Manager):
                       Should only be passed by a recursive call.
         :return: a queryset
         """
-        if follow_qs is None:
-            follow_qs = self.get_queryset()
+        if depth < 1:
+            raise ValueError("The depth parameter should start at 1 and only go up."
+                             "It should only be passed in by recursive calls.")
+        if depth > 1 and follow_qs is None:
+            raise ValueError("The 'follow_qs' parameter is required when 'depth' > 1.")
+
+        if distance <= 0:
+            return self.get_queryset().none()
 
         if depth > distance:
             # end recursion
             return follow_qs.filter(*args, **kwargs)
-        elif depth == 1:
+
+        # Build the root query or sub-queries based on the root queryset.
+        if depth == 1:
             follower_or_following = (models.Q(following=root_user) |
                                      models.Q(followers=root_user))
         else:
             follower_or_following = (models.Q(followers__in=follow_qs) |
                                      models.Q(following__in=follow_qs))
 
-        qs = self.get_queryset().filter(follower_or_following)
+        # Apply the filter to a new queryset and call this method again, one level deeper.
+        qs = self.get_queryset().filter(follower_or_following).distinct()
         return self.distance(follow_qs=qs, depth=depth + 1, distance=distance,
                              root_user=root_user).distinct()
 
@@ -214,7 +223,9 @@ class GitHubUser(GitHubObject):
         """
         Return a queryset of all the users within the given distance to self.
         """
-        assert distance > 0
+        if distance <= 0:
+            return GitHubUser.objects.none()
+
         # Build up a queryset that includes all of the related  users within a given distance
         qs = self.users_at_distance(1)
         for i in range(2, distance + 1):
